@@ -10,7 +10,7 @@ on:
 jobs:
   ios-build:
     name: 🍎 Build iOS IPA
-    runs-on: macos-latest
+    runs-on: macos-13
     timeout-minutes: 60
 
     steps:
