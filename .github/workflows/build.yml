@@ -1,156 +1,171 @@
-name: 🍎 iOS Build - qltinhoc
+name: 🚀 Multi-Platform Build - QL Tin Học
 
-  on:
-    push:
-      branches: [ main, master, develop ]
-    pull_request:
-      branches: [ main, master ]
-    workflow_dispatch:
+on:
+  push:
+    branches: [ main, master, develop, fresh-start ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_android:
+        description: 'Build Android APK'
+        required: false
+        default: 'true'
+        type: boolean
+      build_ios:
+        description: 'Build iOS IPA'
+        required: false
+        default: 'true'
+        type: boolean
+      build_windows:
+        description: 'Build Windows EXE'
+        required: false
+        default: 'true'
+        type: boolean
 
-  jobs:
-    basic-test:
-      name: 🧪 Basic Environment Test
-      runs-on: macos-latest
-      timeout-minutes: 20
+jobs:
+  # ==================== ANDROID BUILD ====================
+  android-build:
+    if: github.event.inputs.build_android != 'false'
+    name: 🤖 Android APK Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
-      steps:
-      - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
-  
-      - name: 🖥️ System Check
-        run: |
-          echo "=== SYSTEM INFO ==="
-          uname -a
-          sw_vers
-          echo ""
-          echo "=== XCODE CHECK ==="
-          xcode-select --print-path || echo "❌ Xcode path not set"
-          xcodebuild -version || echo "❌ Xcode not available"
-          echo ""
-          echo "=== AVAILABLE TOOLS ==="
-          which flutter || echo "❌ Flutter not in PATH"
-          which dart || echo "❌ Dart not in PATH"
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
 
-      - name: 🔧 Setup Flutter (Latest Stable)
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: false
+    - name: ☕ Setup Java 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
 
-      - name: 📋 Flutter Environment
-        run: |
-          echo "=== FLUTTER INFO ==="
-          flutter --version
-          echo ""
-          echo "=== FLUTTER DOCTOR ==="
-          flutter doctor -v
-          echo ""
-          echo "=== FLUTTER CONFIG ==="
-          flutter config
+    - name: 🔧 Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        channel: 'stable'
+        cache: true
 
-      - name: 📦 Project Dependencies
-        run: |
-          echo "=== PROJECT STRUCTURE ==="
-          ls -la
-          echo ""
-          echo "=== PUBSPEC CHECK ==="
-          cat pubspec.yaml | head -20
-          echo ""
-          echo "=== DEPENDENCIES ==="
-          flutter pub get
+    - name: 📦 Get Dependencies
+      run: flutter pub get
 
-      - name: 🎯 iOS Capability Test
-        run: |
-          echo "=== iOS BUILD AVAILABILITY ==="
-          flutter build --help | grep -A5 -B5 ios || echo "❌ iOS not in build help"
-          echo ""
-          echo "=== DIRECT iOS TEST ==="
-          flutter build ios --help || echo "❌ iOS build help failed"
+    - name: 🏗️ Build Android APK
+      run: |
+        flutter build apk --release
+        
+    - name: 📝 Rename APK
+      run: |
+        cp build/app/outputs/flutter-apk/app-release.apk qltinhoc-android.apk
+        ls -la *.apk
 
-      - name: 🔍 iOS Project Analysis
-        run: |
-          echo "=== iOS PROJECT STRUCTURE ==="
-          ls -la ios/
-          echo ""
-          echo "=== PODFILE CHECK ==="
-          cat ios/Podfile || echo "❌ No Podfile found"
-          echo ""
-          echo "=== RUNNER PROJECT ==="
-          ls -la ios/Runner/
-          echo ""
-          echo "=== XCODEPROJ CHECK ==="
-          ls -la ios/Runner.xcodeproj/
+    - name: 📤 Upload Android APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: qltinhoc-android-${{ github.run_number }}
+        path: qltinhoc-android.apk
+        retention-days: 30
 
-      - name: 🏗️ Step-by-Step Build
-        run: |
-          echo "=== STEP 1: Flutter Clean ==="
-          flutter clean
+  # ==================== iOS BUILD ====================
+  ios-build:
+    if: github.event.inputs.build_ios != 'false'
+    name: 🍎 iOS IPA Build
+    runs-on: macos-latest
+    timeout-minutes: 45
 
-          echo "=== STEP 2: Pub Get ==="
-          flutter pub get
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
 
-          echo "=== STEP 3: iOS Preconditions ==="
-          flutter precache --ios
+    - name: 🔧 Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        channel: 'stable'
+        cache: true
 
-          echo "=== STEP 4: CocoaPods Setup ==="
-          cd ios
-          pod --version || echo "❌ CocoaPods not available"
-          pod repo update || echo "⚠️ Pod repo update failed"
-          cd ..
+    - name: 📦 Get Dependencies
+      run: flutter pub get
 
-          echo "=== STEP 5: Attempt Build ==="
-          flutter build ios --no-codesign --debug || {
-            echo "❌ DEBUG BUILD FAILED"
-            echo "=== DETAILED ERROR INFO ==="
-            cd ios
-            xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Debug -destination 'generic/platform=iOS' build || echo "Xcode build also failed"
-            cd ..
-            exit 1
-          }
-          echo "✅ DEBUG BUILD SUCCESS"
+    - name: 🍎 Setup iOS
+      run: |
+        flutter precache --ios
+        cd ios
+        pod install --repo-update
+        cd ..
 
-    
-      - name: 📤 Upload IPA Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tinhocstar-ios-${{ github.run_number }}
-          path: tinhocstar-unsigned.ipa
-          retention-days: 30
-          compression-level: 6
-    
-      - name: 📤 Upload Build Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs-${{ github.run_number }}
-          path: |
-            /Users/runner/work/_temp/_runner_file_commands/
-            ~/.flutter/logs/
-          retention-days: 7
-          if-no-files-found: ignore
-    
-      - name: 💬 Comment PR (if PR)
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const path = 'tinhocstar-unsigned.ipa';
+    - name: 🏗️ Build iOS (No Code Sign)
+      run: |
+        flutter build ios --release --no-codesign
+        
+    - name: 📦 Create IPA
+      run: |
+        cd build/ios/iphoneos
+        mkdir -p Payload
+        cp -r Runner.app Payload/
+        zip -r ../../../qltinhoc-ios-unsigned.ipa Payload/
+        cd ../../..
+        ls -la *.ipa
 
-            if (fs.existsSync(path)) {
-              const stats = fs.statSync(path);
-              const fileSizeInMB = (stats.size / (1024 * 1024)).toFixed(2);
-            
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `🍎 **iOS Build Successful!**
-              
-                📱 **App**: tinhocstar
-                📦 **Size**: ${fileSizeInMB} MB
-                🔗 **Download**: Check the "Artifacts" section below
-                
-                ⚠️ **Note**: This is an unsigned IPA. You'll need to sideload it using AltStore, 3uTools, or similar tools.`
-              });
-            }
+    - name: 📤 Upload iOS IPA
+      uses: actions/upload-artifact@v4
+      with:
+        name: qltinhoc-ios-${{ github.run_number }}
+        path: qltinhoc-ios-unsigned.ipa
+        retention-days: 30
+
+  # ==================== WINDOWS BUILD ====================
+  windows-build:
+    if: github.event.inputs.build_windows != 'false'
+    name: 🖥️ Windows EXE Build
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: 🔧 Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        channel: 'stable'
+        cache: true
+
+    - name: 📦 Get Dependencies
+      run: flutter pub get
+
+    - name: 🖥️ Enable Windows Desktop
+      run: flutter config --enable-windows-desktop
+
+    - name: 🏗️ Build Windows EXE
+      run: flutter build windows --release
+
+    - name: 📦 Package Windows App
+      run: |
+        Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "qltinhoc-windows.zip"
+        dir *.zip
+
+    - name: 📤 Upload Windows ZIP
+      uses: actions/upload-artifact@v4
+      with:
+        name: qltinhoc-windows-${{ github.run_number }}
+        path: qltinhoc-windows.zip
+        retention-days: 30
+
+  # ==================== BUILD SUMMARY ====================
+  build-summary:
+    name: 📋 Build Summary
+    runs-on: ubuntu-latest
+    needs: [android-build, ios-build, windows-build]
+    if: always()
+
+    steps:
+    - name: 📊 Build Results
+      run: |
+        echo "🚀 QL TIN HỌC - BUILD SUMMARY"
+        echo "================================"
+        echo "🤖 Android: ${{ needs.android-build.result }}"
+        echo "🍎 iOS: ${{ needs.ios-build.result }}"
+        echo "🖥️ Windows: ${{ needs.windows-build.result }}"
+        echo "================================"
+        echo "📦 Artifacts will be available for 30 days"
+        echo "🔗 Download from Actions tab"
