@@ -1,4 +1,4 @@
-name: 🚀 Multi-Platform Build - QL Tin Học
+name: 🍎 iOS Build - QL Tin Học
 
 on:
   push:
@@ -6,75 +6,15 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
-    inputs:
-      build_android:
-        description: 'Build Android APK'
-        required: false
-        default: 'true'
-        type: boolean
-      build_ios:
-        description: 'Build iOS IPA'
-        required: false
-        default: 'true'
-        type: boolean
-      build_windows:
-        description: 'Build Windows EXE'
-        required: false
-        default: 'true'
-        type: boolean
 
 jobs:
-  # ==================== ANDROID BUILD ====================
-  android-build:
-    if: github.event.inputs.build_android != 'false'
-    name: 🤖 Android APK Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-    - name: 📥 Checkout Repository
-      uses: actions/checkout@v4
-
-    - name: ☕ Setup Java 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-
-    - name: 🔧 Setup Flutter
-      uses: subosito/flutter-action@v2
-      with:
-        channel: 'stable'
-        cache: true
-
-    - name: 📦 Get Dependencies
-      run: flutter pub get
-
-    - name: 🏗️ Build Android APK
-      run: |
-        flutter build apk --release
-        
-    - name: 📝 Rename APK
-      run: |
-        cp build/app/outputs/flutter-apk/app-release.apk qltinhoc-android.apk
-        ls -la *.apk
-
-    - name: 📤 Upload Android APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: qltinhoc-android-${{ github.run_number }}
-        path: qltinhoc-android.apk
-        retention-days: 30
-
-  # ==================== iOS BUILD ====================
   ios-build:
-    if: github.event.inputs.build_ios != 'false'
-    name: 🍎 iOS IPA Build
+    name: 🍎 Build iOS IPA
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
-    - name: 📥 Checkout Repository
+    - name: 📥 Checkout repository
       uses: actions/checkout@v4
 
     - name: 🔧 Setup Flutter
@@ -83,89 +23,131 @@ jobs:
         channel: 'stable'
         cache: true
 
-    - name: 📦 Get Dependencies
+    - name: 📦 Install dependencies
       run: flutter pub get
 
-    - name: 🍎 Setup iOS
+    - name: 🍎 Setup iOS environment
       run: |
         flutter precache --ios
         cd ios
         pod install --repo-update
         cd ..
 
-    - name: 🏗️ Build iOS (No Code Sign)
+    - name: 🏗️ Build iOS app (unsigned)
       run: |
         flutter build ios --release --no-codesign
         
-    - name: 📦 Create IPA
+    - name: 📦 Create IPA file
       run: |
+        echo "📦 Creating IPA from built app..."
         cd build/ios/iphoneos
+        
+        # Create Payload directory
         mkdir -p Payload
+        
+        # Copy Runner.app to Payload
         cp -r Runner.app Payload/
+        
+        # Create IPA
         zip -r ../../../qltinhoc-ios-unsigned.ipa Payload/
+        
         cd ../../..
-        ls -la *.ipa
+        
+        # Verify IPA was created
+        if [ -f "qltinhoc-ios-unsigned.ipa" ]; then
+          echo "✅ IPA created successfully!"
+          ls -la qltinhoc-ios-unsigned.ipa
+        else
+          echo "❌ IPA creation failed!"
+          exit 1
+        fi
 
-    - name: 📤 Upload iOS IPA
+    - name: 📊 Build info
+      run: |
+        echo "🍎 iOS Build Information"
+        echo "======================="
+        echo "📱 App: QL Tin Học"
+        echo "📦 Package: qltinhoc-ios-unsigned.ipa"
+        echo "🔧 Build: Release (unsigned)"
+        echo "📅 Date: $(date)"
+        echo "🔗 Commit: ${{ github.sha }}"
+        
+        # Show file size
+        if [ -f "qltinhoc-ios-unsigned.ipa" ]; then
+          echo "📏 Size: $(ls -lh qltinhoc-ios-unsigned.ipa | awk '{print $5}')"
+        fi
+
+    - name: 📤 Upload IPA artifact
       uses: actions/upload-artifact@v4
       with:
-        name: qltinhoc-ios-${{ github.run_number }}
+        name: qltinhoc-ios-unsigned-${{ github.run_number }}
         path: qltinhoc-ios-unsigned.ipa
         retention-days: 30
 
-  # ==================== WINDOWS BUILD ====================
-  windows-build:
-    if: github.event.inputs.build_windows != 'false'
-    name: 🖥️ Windows EXE Build
-    runs-on: windows-latest
-    timeout-minutes: 30
-
-    steps:
-    - name: 📥 Checkout Repository
-      uses: actions/checkout@v4
-
-    - name: 🔧 Setup Flutter
-      uses: subosito/flutter-action@v2
-      with:
-        channel: 'stable'
-        cache: true
-
-    - name: 📦 Get Dependencies
-      run: flutter pub get
-
-    - name: 🖥️ Enable Windows Desktop
-      run: flutter config --enable-windows-desktop
-
-    - name: 🏗️ Build Windows EXE
-      run: flutter build windows --release
-
-    - name: 📦 Package Windows App
-      run: |
-        Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "qltinhoc-windows.zip"
-        dir *.zip
-
-    - name: 📤 Upload Windows ZIP
+    - name: 📝 Upload build logs
+      if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: qltinhoc-windows-${{ github.run_number }}
-        path: qltinhoc-windows.zip
-        retention-days: 30
+        name: ios-build-logs-${{ github.run_number }}
+        path: |
+          ios/Podfile.lock
+          build/ios/iphoneos/Runner.app/Info.plist
+        retention-days: 7
 
-  # ==================== BUILD SUMMARY ====================
-  build-summary:
-    name: 📋 Build Summary
+  # ==================== BUILD VERIFICATION ====================
+  verify-build:
+    name: ✅ Verify Build
     runs-on: ubuntu-latest
-    needs: [android-build, ios-build, windows-build]
+    needs: ios-build
     if: always()
 
     steps:
-    - name: 📊 Build Results
+    - name: 📥 Download IPA
+      if: needs.ios-build.result == 'success'
+      uses: actions/download-artifact@v4
+      with:
+        name: qltinhoc-ios-unsigned-${{ github.run_number }}
+
+    - name: 🔍 Verify IPA
+      if: needs.ios-build.result == 'success'
       run: |
-        echo "🚀 QL TIN HỌC - BUILD SUMMARY"
-        echo "================================"
-        echo "🤖 Android: ${{ needs.android-build.result }}"
-        echo "🍎 iOS: ${{ needs.ios-build.result }}"
-        echo "🖥️ Windows: ${{ needs.windows-build.result }}"
-        echo "================================"
-        echo "📦 Artifacts will be available for 30 days"
-        echo "🔗 Download from Actions tab"
+        echo "🔍 Verifying IPA file..."
+        
+        if [ -f "qltinhoc-ios-unsigned.ipa" ]; then
+          echo "✅ IPA file exists"
+          echo "📏 Size: $(ls -lh qltinhoc-ios-unsigned.ipa | awk '{print $5}')"
+          
+          # Check if it's a valid ZIP (IPA is a ZIP file)
+          if unzip -t qltinhoc-ios-unsigned.ipa > /dev/null 2>&1; then
+            echo "✅ IPA is a valid archive"
+            
+            # List contents
+            echo "📦 IPA Contents:"
+            unzip -l qltinhoc-ios-unsigned.ipa | head -20
+          else
+            echo "❌ IPA is corrupted"
+            exit 1
+          fi
+        else
+          echo "❌ IPA file not found"
+          exit 1
+        fi
+
+    - name: 📊 Build Summary
+      run: |
+        echo "🍎 iOS BUILD SUMMARY"
+        echo "==================="
+        echo "🏗️ Build Status: ${{ needs.ios-build.result }}"
+        echo "📱 App Name: QL Tin Học"
+        echo "📦 Output: qltinhoc-ios-unsigned.ipa"
+        echo "🔗 Run: ${{ github.run_number }}"
+        echo "==================="
+        
+        if [ "${{ needs.ios-build.result }}" == "success" ]; then
+          echo "✅ BUILD SUCCESSFUL!"
+          echo "📥 Download IPA from Actions artifacts"
+          echo "⚠️  Note: IPA is unsigned - requires signing for device installation"
+        else
+          echo "❌ BUILD FAILED!"
+          echo "📋 Check build logs for details"
+        fi
